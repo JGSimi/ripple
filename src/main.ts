@@ -1,4 +1,5 @@
 import './styles.css';
+import * as sfx from './audio/sfx';
 import { createLoop } from './game/loop';
 import { createState } from './game/state';
 import { attachPointer } from './input/pointer';
@@ -17,13 +18,21 @@ state.dispatch({
   height: surface.height,
 });
 
+document.addEventListener('visibilitychange', () => {
+  const hidden = document.hidden;
+  state.dispatch({ type: 'VISIBILITY', hidden });
+  sfx.setSuspended(hidden);
+});
+
 attachPointer(canvas, {
   onDown: (p) => {
-    // Mute hit target ≥44×44 top-left (spec-frames)
+    // Mute hit ≥44×44 top-left (spec-frames)
     if (p.x <= 44 && p.y <= 44) {
+      sfx.unlock();
       state.dispatch({ type: 'TOGGLE_MUTE' });
       return;
     }
+    sfx.unlock();
     state.dispatch({ type: 'POINTER_DOWN', x: p.x, y: p.y, now: p.now });
   },
 });
