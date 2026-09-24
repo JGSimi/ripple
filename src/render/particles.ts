@@ -1,6 +1,11 @@
 /** Lightweight particle pool. Cap ≤24. No blur/shadow. */
 
-import { PARTICLE_CAP, PARTICLE_LIFE_MS } from '../game/juice';
+import {
+  CONFETTI_COUNT,
+  PARTICLE_CAP,
+  PARTICLE_LIFE_MS,
+  PERFECT_PARTICLE_COUNT,
+} from '../game/juice';
 
 export type Particle = {
   x: number;
@@ -36,7 +41,7 @@ export function createParticleSim(): ParticleSim {
 
   return {
     burstPerfect(x, y, now, color) {
-      const n = 8;
+      const n = PERFECT_PARTICLE_COUNT; // 6–10 range
       for (let i = 0; i < n; i++) {
         const ang = (Math.PI * 2 * i) / n + rand(-0.2, 0.2);
         const spd = rand(40, 120);
@@ -55,7 +60,7 @@ export function createParticleSim(): ParticleSim {
     },
 
     burstConfetti(x, y, now, colors) {
-      const n = 12;
+      const n = CONFETTI_COUNT;
       for (let i = 0; i < n; i++) {
         const ang = rand(-Math.PI, 0); // upward-ish
         const spd = rand(60, 180);

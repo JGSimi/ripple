@@ -2,9 +2,9 @@
 
 Jogo web minimalista (toque → onda). Stack: **Vite + TypeScript + Canvas 2D + Web Audio**.
 
-## Milestone atual: M4 — Result / best / mute
+## Milestone atual: M5 — Nice + prod DoD
 
-Core jogável (M2) + juice must (M3) + result polido e persistência (M4).
+Core jogável (M2) + juice must (M3) + result/best/mute (M4) + Nice gated (M5).
 
 ### O que tem
 - Onda no frame do toque; timing Perfect ≤32ms / Good ≤72ms / Miss
@@ -15,8 +15,14 @@ Core jogável (M2) + juice must (M3) + result polido e persistência (M4).
 - Result: score + `best` + CTA **de novo** (tap-anywhere &lt;1s); sem “Quase!”
 - `best` e mute em `localStorage`; primeiros 3 hits da vida com alvo um pouco maior
 
-### Ainda não (M5)
-Partículas / confetti / vibrate / Lighthouse pass formal — nice gates.
+### Nice (gates — M5)
+- Perfect: 6–10 sparks na crista, fade ~300ms, cap ≤24 — `!prefers-reduced-motion` + frame budget (`allowParticles()`)
+- Novo best: ~12 confetti + glow no `best`
+- Combo ≥3: pulse leve no HUD
+- Mobile: `vibePerfect` / `vibeMiss` quando `navigator.vibrate` existe
+- Result CTA breathing 1.02 após idle &gt;8s (reduced-motion off)
+- Caps ≤8 ripples / ≤24 particles; sem GSAP/Howler
+- `docs/perf.md`: Lighthouse não rodado aqui; expectativa ≥90 justificada
 
 ## Como jogar
 
@@ -39,7 +45,7 @@ npm run dev
 npm run build
 ```
 
-Saída em `dist/`.
+Saída em `dist/`. Ver tamanho gzip do JS no report de build / `docs/perf.md`.
 
 ## Copy lock
 

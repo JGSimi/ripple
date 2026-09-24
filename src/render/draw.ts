@@ -1,10 +1,16 @@
-/** Draw playfield: bg, targets, ripples, HUD juice, judgment, result. */
+/** Draw playfield: bg, targets, ripples, particles, HUD juice, judgment, result. */
 
 import { reducedMotion } from '../a11y/motion';
 import type { Snapshot } from '../game/state';
-import { JUDGMENT_RISE_PX, SCORE_POP_MS } from '../game/juice';
+import {
+  COMBO_PULSE_MS,
+  CTA_BREATH_IDLE_MS,
+  JUDGMENT_RISE_PX,
+  SCORE_POP_MS,
+} from '../game/juice';
 import type { CanvasSurface } from './canvas';
 import { HUD_PAD_TOP, HUD_PAD_X } from './layout';
+import { drawParticles } from './particles';
 import { readTokens } from './tokens';
 import { layoutResult } from '../ui/result';
 
@@ -40,6 +46,10 @@ export function draw(surface: CanvasSurface, snapshot: Snapshot, now: number): v
     ctx.strokeStyle = withAlpha(t.accent, 0.15 + fade * 0.85);
     ctx.lineWidth = 2;
     ctx.stroke();
+  }
+
+  if (snapshot.particles.length > 0) {
+    drawParticles(ctx, snapshot.particles, now);
   }
 
   if (snapshot.judgment) {
@@ -108,23 +118,51 @@ function drawHud(
   ctx.restore();
 
   if (snapshot.combo >= 2 && snapshot.phase === 'playing') {
+    let comboScale = 1;
+    if (snapshot.combo >= 3 && !reducedMotion()) {
+      // Light ongoing pulse + brief hit pulse
+      const breath = 1 + 0.03 * Math.sin(now * 0.012);
+      let hit = 1;
+      if (snapshot.comboPulseAt > 0) {
+        const u = Math.min(1, (now - snapshot.comboPulseAt) / COMBO_PULSE_MS);
+        if (u < 1) hit = 1.08 - 0.08 * u;
+      }
+      comboScale = breath * hit;
+    }
+    ctx.save();
+    ctx.translate(width * 0.5, top + 38);
+    ctx.scale(comboScale, comboScale);
     ctx.fillStyle = t.accent;
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`×${snapshot.combo}`, width * 0.5, top + 32);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`×${snapshot.combo}`, 0, 0);
+    ctx.restore();
+  }
+
+  const bestX = width - padX;
+  const bestY = top + 16;
+  if (snapshot.isNewBest && snapshot.phase === 'result' && !reducedMotion()) {
+    // Soft glow behind best (no shadowBlur — fill circles only)
+    ctx.beginPath();
+    ctx.arc(bestX - 12, bestY + 6, 22, 0, Math.PI * 2);
+    ctx.fillStyle = withAlpha(t.perfect, 0.18);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bestX - 12, bestY + 6, 12, 0, Math.PI * 2);
+    ctx.fillStyle = withAlpha(t.accent, 0.22);
+    ctx.fill();
   }
 
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
   ctx.fillStyle = t.mute;
   ctx.font = '500 12px system-ui, sans-serif';
-  ctx.fillText('best', width - padX, top);
+  ctx.fillText('best', bestX, top);
   ctx.fillStyle = snapshot.isNewBest && snapshot.phase === 'result' ? t.ink : t.mute;
   ctx.font = '600 16px system-ui, sans-serif';
-  ctx.fillText(String(snapshot.best), width - padX, top + 16);
+  ctx.fillText(String(snapshot.best), bestX, bestY);
 }
-
 
 function drawMuteIcon(
   ctx: CanvasRenderingContext2D,
@@ -246,6 +284,19 @@ function drawResult(
   ctx.textBaseline = 'middle';
   ctx.fillText(String(snapshot.score), cx, L.cardY + 52);
 
+  if (snapshot.isNewBest && !reducedMotion()) {
+    const gx = cx;
+    const gy = L.cardY + 92;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 28, 0, Math.PI * 2);
+    ctx.fillStyle = withAlpha(t.perfect, 0.16);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(gx, gy, 14, 0, Math.PI * 2);
+    ctx.fillStyle = withAlpha(t.accent, 0.2);
+    ctx.fill();
+  }
+
   ctx.fillStyle = snapshot.isNewBest ? t.ink : t.mute;
   ctx.font = '500 14px system-ui, sans-serif';
   ctx.fillText(`best  ${snapshot.best}`, cx, L.cardY + 92);
@@ -256,13 +307,30 @@ function drawResult(
     ctx.fillText(`×${snapshot.combo}`, cx, L.cardY + 112);
   }
 
-  // CTA de novo — filled accent, high contrast text
+  // CTA de novo — filled accent; breathing 1.02 after idle >8s
+  let ctaScale = 1;
+  if (
+    !reducedMotion() &&
+    snapshot.resultBornAt > 0 &&
+    now - snapshot.resultBornAt >= CTA_BREATH_IDLE_MS
+  ) {
+    const phase = (now - snapshot.resultBornAt - CTA_BREATH_IDLE_MS) * 0.003;
+    ctaScale = 1 + 0.02 * (0.5 + 0.5 * Math.sin(phase));
+  }
+
+  const ctaCx = L.ctaX + L.ctaW * 0.5;
+  const ctaCy = L.ctaY + L.ctaH * 0.5;
+  ctx.save();
+  ctx.translate(ctaCx, ctaCy);
+  ctx.scale(ctaScale, ctaScale);
+  ctx.translate(-ctaCx, -ctaCy);
   ctx.fillStyle = t.accent;
   roundRect(ctx, L.ctaX, L.ctaY, L.ctaW, L.ctaH, 12);
   ctx.fill();
   ctx.fillStyle = t.bg;
   ctx.font = '700 16px system-ui, sans-serif';
-  ctx.fillText('de novo', cx, L.ctaY + L.ctaH * 0.5);
+  ctx.fillText('de novo', cx, ctaCy);
+  ctx.restore();
 
   ctx.restore();
 }

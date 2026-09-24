@@ -1,6 +1,7 @@
-/** FSM: boot → playing → result. Sims + score + juice + persist. */
+/** FSM: boot → playing → result. Sims + score + juice + persist + Nice. */
 
-import { reducedMotion } from '../a11y/motion';
+import { allowParticles, noteFrameDt, reducedMotion } from '../a11y/motion';
+import { vibeMiss, vibePerfect } from '../a11y/vibe';
 import * as sfx from '../audio/sfx';
 import {
   loadBest,
@@ -11,6 +12,7 @@ import {
   saveMuted,
   type Flags,
 } from '../persist/best';
+import { createParticleSim, type Particle } from '../render/particles';
 import { detectHits } from '../sim/hit';
 import { createRippleSim, type Ripple } from '../sim/ripple';
 import { createScore } from '../sim/score';
@@ -49,6 +51,7 @@ export type Snapshot = {
   displayScore: number;
   scorePop: ScorePop | null;
   combo: number;
+  comboPulseAt: number;
   best: number;
   isNewBest: boolean;
   muted: boolean;
@@ -58,6 +61,7 @@ export type Snapshot = {
   playfield: { width: number; height: number };
   ripples: readonly Ripple[];
   targets: readonly Target[];
+  particles: readonly Particle[];
   judgment: FloatingJudgment | null;
   lastGrade: 'perfect' | 'good' | 'miss' | null;
   clock: number;
@@ -74,6 +78,8 @@ type Action =
 
 const BOOT_MAX_MS = 800;
 
+const CONFETTI_COLORS = ['#F5FF8A', '#7CFFB2', '#3DE0FF', '#E8EEF8'];
+
 export type GameState = {
   dispatch: (action: Action) => void;
   getSnapshot: () => Snapshot;
@@ -87,6 +93,7 @@ export function createState(now = performance.now()): GameState {
   const ripples = createRippleSim();
   const targets = createTargetSim();
   const scoreApi = createScore();
+  const particles = createParticleSim();
 
   let flags: Flags = loadFlags();
   let phase: Phase = 'boot';
@@ -103,6 +110,7 @@ export function createState(now = performance.now()): GameState {
   let hitStopUntil = 0;
   let frozenClock = now;
   let resultBornAt = 0;
+  let comboPulseAt = 0;
 
   sfx.setMuted(muted);
 
@@ -123,6 +131,7 @@ export function createState(now = performance.now()): GameState {
       displayScore: displayScoreAt(wallNow),
       scorePop,
       combo: s.combo,
+      comboPulseAt,
       best,
       isNewBest,
       muted,
@@ -132,6 +141,7 @@ export function createState(now = performance.now()): GameState {
       playfield: { ...playfield },
       ripples: ripples.active(),
       targets: targets.active(),
+      particles: particles.active(),
       judgment,
       lastGrade,
       clock: hitStopActive ? frozenClock : wallNow,
@@ -142,11 +152,13 @@ export function createState(now = performance.now()): GameState {
   function clearWorld(): void {
     ripples.clear();
     targets.clear();
+    particles.clear();
     judgment = null;
     lastGrade = null;
     scorePop = null;
     hitStopUntil = 0;
     isNewBest = false;
+    comboPulseAt = 0;
   }
 
   function spawnOpts() {
@@ -173,6 +185,11 @@ export function createState(now = performance.now()): GameState {
       best = s.score;
       isNewBest = true;
       saveBest(best);
+      if (allowParticles()) {
+        const cx = playfield.width * 0.5;
+        const cy = playfield.height * 0.42;
+        particles.burstConfetti(cx, cy, at, CONFETTI_COLORS);
+      }
     } else {
       isNewBest = false;
     }
@@ -221,6 +238,11 @@ export function createState(now = performance.now()): GameState {
     sfx.play('tick');
   }
 
+  function onMiss(at: number): void {
+    vibeMiss();
+    endRun(at);
+  }
+
   return {
     dispatch(action: Action) {
       switch (action.type) {
@@ -256,7 +278,8 @@ export function createState(now = performance.now()): GameState {
         }
 
         case 'FRAME': {
-          const { now } = action;
+          const { now, dt } = action;
+          noteFrameDt(dt);
 
           if (phase === 'boot' && now - bootStartedAt >= BOOT_MAX_MS) {
             beginPlaying(now);
@@ -267,6 +290,11 @@ export function createState(now = performance.now()): GameState {
           }
           if (scorePop && now - scorePop.bornAt >= scorePop.lifeMs) {
             scorePop = null;
+          }
+
+          // Particles keep animating through hit-stop / result
+          if (phase !== 'boot') {
+            particles.step(now, dt);
           }
 
           if (phase === 'playing' && now < hitStopUntil) {
@@ -296,7 +324,7 @@ export function createState(now = performance.now()): GameState {
             if (hit.grade === 'miss') {
               markBurst(hit.target, clock);
               sfx.play('thud');
-              endRun(clock);
+              onMiss(clock);
               break;
             }
 
@@ -308,9 +336,24 @@ export function createState(now = performance.now()): GameState {
             startScorePop(before, score, points, now);
             noteHitSuccess();
 
-            if (hit.grade === 'perfect' && !reducedMotion()) {
-              hitStopUntil = now + HIT_STOP_MS;
-              frozenClock = clock;
+            if (combo >= 3) {
+              comboPulseAt = now;
+            }
+
+            if (hit.grade === 'perfect') {
+              vibePerfect();
+              if (allowParticles()) {
+                particles.burstPerfect(
+                  hit.target.center.x,
+                  hit.target.center.y,
+                  now,
+                  '#F5FF8A',
+                );
+              }
+              if (!reducedMotion()) {
+                hitStopUntil = now + HIT_STOP_MS;
+                frozenClock = clock;
+              }
               sfx.play('ding', { pitch: dingPitch(combo) * 1.08 });
             } else {
               sfx.play('ding', { pitch: dingPitch(combo) });
@@ -335,7 +378,7 @@ export function createState(now = performance.now()): GameState {
                   );
                 }
                 sfx.play('thud');
-                endRun(clock);
+                onMiss(clock);
                 break;
               }
             }
